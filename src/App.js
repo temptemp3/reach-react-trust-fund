@@ -138,6 +138,9 @@ function App() {
         <Col>
           <h1 className="text-center">{title.toUpperCase()}</h1>
         </Col>
+        <Col className="text-center" xs={12}>
+          This runs on the <a href="https://testnet.algoexplorer.io/">Algorand Test Net</a>. Need funds? Try <a href="https://bank.testnet.algorand.network/">Algorand dispenser.</a>
+        </Col>
       </Row>
       <Row className="mt-5 role role-participant">
         <ButtonGroup as={Col} xs={2} size="lg">
