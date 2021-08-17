@@ -190,7 +190,7 @@ function App() {
           <h2>Receive funds</h2>
         </Col>
         <Col xs={3}>
-          <Form.Control name={REACT_APP_NETWORK === 'ETH' ? "ADDR" : "INFO"} size="lg" type="text" placeholder="Info" onChange={handleChange} />
+          <Form.Control name={REACT_APP_NETWORK === 'ETH' ? "ADDR" : "INFO"} size="lg" type={REACT_APP_NETWORK === 'ETH' ? "text" : "number"} placeholder="Info" onChange={handleChange} />
         </Col>
 
         {REACT_APP_NETWORK === 'ETH' ? (
