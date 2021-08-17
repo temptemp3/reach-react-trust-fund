@@ -12,28 +12,41 @@ import './App.css'
 const { REACT_APP_NETWORK_PROVIDER, REACT_APP_NETWORK } = process.env
 
 const stdlib = loadStdlib(REACT_APP_NETWORK)
-stdlib.setProviderByName(REACT_APP_NETWORK_PROVIDER)
+
+if (REACT_APP_NETWORK_PROVIDER !== 'LocalHost') {
+  stdlib.setProviderByName(REACT_APP_NETWORK_PROVIDER)
+}
+
 if (REACT_APP_NETWORK === 'ALGO') {
   stdlib.setSignStrategy('mnemonic')
 }
 
-const hasFaucet = true
+const hasFaucet = (acc) => true
   && REACT_APP_NETWORK === 'ETH'
   && REACT_APP_NETWORK_PROVIDER === 'LocalHost'
+  && acc
 
 function App() {
+
+  const title = 'relay'
+
   const [state, setState] = useState({
-    acc: null
+    acc: null,
+    relay: {}
   })
+
   const [query, setQuery] = useState({})
+
   const handleChange = ({ target }) => {
     let { name, value } = target
     switch (name) {
-      case 'INFO':
-      case 'PASS':
       case 'AMT':
+      case 'INFO':
         value = parseInt(value)
         break
+      case 'SK':
+      case 'ADDR':
+      case 'MNE':
       default:
         break
     }
@@ -43,6 +56,9 @@ function App() {
   const handleConnect = async () => {
     console.log("Connecting ...")
     const acc = await stdlib.getDefaultAccount()
+    if (stdlib.connector === 'ETH') {
+      acc.setGasLimit(5000000);
+    }
     const addr = await acc.getAddress();
     const balAtomic = await stdlib.balanceOf(acc);
     const bal = stdlib.formatCurrency(balAtomic, 4);
@@ -60,30 +76,58 @@ function App() {
     const faucet = await stdlib.getFaucet()
     await stdlib.transfer(
       faucet,
-      await stdlib.getDefaultAccount(),
+      state.acc,
       stdlib.parseCurrency('100')
     )
+    const balAtomic = await stdlib.balanceOf(state.acc);
+    const bal = stdlib.formatCurrency(balAtomic, 4);
+    setState({
+      ...state,
+      bal,
+      balAtomic
+    })
   }
 
   const handleAlice = async () => {
     console.log("Handling alice ...")
     const ctc = state.acc.deploy(backend)
-    setState({ ...state, ctc })
+    //const accRelay = await stdlib.newTestAccount(0);
+    const accRelay = await stdlib.createAccount();
+    stdlib.transfer(state.acc, accRelay, stdlib.minimumBalance);
+    console.log({ accRelay })
+    console.log(accRelay.networkAccount.addr)
+    console.log(accRelay.networkAccount.sk)
+    setTimeout(async () =>
+      setState({
+        ...state,
+        ctc,
+        ctcInfo: await ctc.getInfo(),
+        relay: {
+          acc: accRelay,
+        },
+      }), 5000)
     await backend.Alice(ctc, {
       amt: stdlib.parseCurrency(query.AMT),
-      pass: query.PASS
+      getRelay: async () => {
+        console.log('Alice creates a Relay account.');
+        console.log('Alice shares it with Bob outside of the network.');
+        return accRelay.networkAccount;
+      }
     })
   }
 
   const handleBob = async () => {
     console.log("Handling bob ...")
-    let { INFO, PASS } = query
-    const ctc = state.acc.attach(backend, INFO)
-    await backend.Bob(ctc, {
-      getPass: () => {
-        console.log(`Bob asked to give the preimage`);
-        console.log(`Returning: ${PASS}`);
-        return PASS
+    let { INFO, ADDR, SK, MNE } = query
+    const accRelay = REACT_APP_NETWORK === 'ETH'
+      ? await stdlib.newAccountFromMnemonic(MNE)
+      : await stdlib.newAccountFromSecret(Uint8Array.from(SK.split(',').map(el => +el)))
+    stdlib.transfer(state.acc, accRelay, stdlib.parseCurrency(1))
+    const ctcRelay = accRelay.attach(backend, REACT_APP_NETWORK === 'ETH' ? ADDR : INFO);
+    return backend.Relay(ctcRelay, {
+      getBob: async () => {
+        console.log('Bob, acting as the Relay gives his information.');
+        return state.acc.networkAccount;
       }
     })
   }
@@ -92,13 +136,13 @@ function App() {
     <Container>
       <Row className="mt-5">
         <Col>
-          <h1 className="text-center">HashLock</h1>
+          <h1 className="text-center">{title.toUpperCase()}</h1>
         </Col>
       </Row>
       <Row className="mt-5 role role-participant">
         <ButtonGroup as={Col} xs={2} size="lg">
           {!state.acc && <Button onClick={handleConnect}>Connect</Button>}
-          {hasFaucet && <Button variant="secondary" onClick={handleFaucet}>Faucet</Button>}
+          {hasFaucet(state.acc) && <Button variant="secondary" onClick={handleFaucet}>Faucet</Button>}
         </ButtonGroup>
       </Row>
       {state.acc && <Row>
@@ -118,29 +162,45 @@ function App() {
         <Col xs={3}>
           <Form.Control name="AMT" size="lg" type="text" placeholder="Amount" onChange={handleChange} />
         </Col>
-        <Col xs={6}>
-          <Form.Control name="PASS" size="lg" type="password" placeholder="Password" onChange={handleChange} />
-        </Col>
         <Col xs={3}>
           <Button size="lg" onClick={handleAlice} disabled={!state.acc}>Send</Button>
         </Col>
+        {state.ctcInfo &&
+          <Col xs={12}>
+            info: <br />
+            {state.ctcInfo}
+          </Col>}
+        {state.relay.acc &&
+          REACT_APP_NETWORK === 'ETH' ? (
+          <Col xs={12}>
+            mnemonic phrase: <br />
+            {state.relay.acc?.networkAccount?.mnemonic?.phrase}
+          </Col>) : ( state.relay.acc?.networkAccount &&
+            <Col xs={12}>
+            secret: <br />
+            {state.relay.acc.networkAccount.sk.toString()}
+          </Col>
+        )}
       </Row>
       <Row className="mt-5 role role-bob">
         <Col xs={12} className="mb-3">
           <h2>Receive funds</h2>
         </Col>
         <Col xs={3}>
-          <Form.Control name="INFO" size="lg" type="text" placeholder="Info" onChange={handleChange} />
+          <Form.Control name={REACT_APP_NETWORK === 'ETH' ? "ADDR" : "INFO"} size="lg" type="text" placeholder="Info" onChange={handleChange} />
         </Col>
-        <Col xs={6}>
-          <Form.Control name="PASS" size="lg" type="password" placeholder="Password" onChange={handleChange} />
-        </Col>
+
+        {REACT_APP_NETWORK === 'ETH' ? (
+          <Col xs={6}>
+            <Form.Control name="MNE" size="lg" type="text" placeholder="Mnemonic" onChange={handleChange} />
+          </Col>
+        ) : (
+          <Col xs={6}>
+            <Form.Control name="SK" size="lg" type="text" placeholder="Secret" onChange={handleChange} />
+          </Col>
+        )}
         <Col xs={3}>
           <Button size="lg" onClick={handleBob} disabled={!state.acc}>Receive</Button>
-        </Col>
-      </Row>
-      <Row className="mt-5 role role-faucet">
-        <Col>
         </Col>
       </Row>
     </Container>
