@@ -1,6 +1,10 @@
-![スクリーンショット 2021-08-15 11 12 54](https://user-images.githubusercontent.com/23183451/129464774-285d7f33-c0d6-43c2-a10e-acc41b796d67.png)
+![スクリーンショット 2021-08-17 21 04 41](https://user-images.githubusercontent.com/23183451/129724970-2fb811c6-7450-48c5-a617-104c96884234.png)
 
-React.js UI for [Reach Hash Lock Workshop](https://github.com/temptemp3/reach-workshop-hash-lock)
+React.js UI for [Reach Relay Workshop](https://github.com/temptemp3/reach-workshop-relay)
+
+See also:
+
+* [Hashlock](https://github.com/temptemp3/reach-react-hash-lock)
 
 # Getting Started with Create React App
 
