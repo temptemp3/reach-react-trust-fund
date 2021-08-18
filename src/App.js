@@ -28,7 +28,7 @@ const hasFaucet = (acc) => true
 
 function App() {
 
-  const title = 'relay'
+  const title = 'trustfund'
 
   const [state, setState] = useState({
     acc: null,
@@ -37,13 +37,36 @@ function App() {
 
   const [query, setQuery] = useState({})
 
+  const common = (who, delay = 0) => ({
+    funded: async () => {
+      try {
+        console.log(`${who} sees that the account is funded.`)
+        if (delay !== 0) {
+          console.log(`${who} begins to wait ...`)
+          await stdlib.wait(delay);
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    },
+    ready: async () => {
+      console.log(`${who} is ready to receive the funds.`)
+    },
+    recvd: async () => {
+      console.log(`${who} received the funds.`)
+    }
+  })
+
   const handleChange = ({ target }) => {
     let { name, value } = target
     switch (name) {
-      case 'AMT':
       case 'INFO':
+      case 'MAT':
+      case 'REF':
+      case 'DOR':
         value = parseInt(value)
         break
+      case 'AMT':
       case 'SK':
       case 'ADDR':
       case 'MNE':
@@ -91,45 +114,39 @@ function App() {
   const handleAlice = async () => {
     console.log("Handling alice ...")
     const ctc = state.acc.deploy(backend)
-    //const accRelay = await stdlib.newTestAccount(0);
-    const accRelay = await stdlib.createAccount();
-    stdlib.transfer(state.acc, accRelay, stdlib.minimumBalance);
-    console.log({ accRelay })
-    console.log(accRelay.networkAccount.addr)
-    console.log(accRelay.networkAccount.sk)
-    setTimeout(async () =>
-      setState({
-        ...state,
-        ctc,
-        ctcInfo: await ctc.getInfo(),
-        relay: {
-          acc: accRelay,
-        },
-      }), 5000)
-    await backend.Alice(ctc, {
-      amt: stdlib.parseCurrency(query.AMT),
-      getRelay: async () => {
-        console.log('Alice creates a Relay account.');
-        console.log('Alice shares it with Bob outside of the network.');
-        return accRelay.networkAccount;
+
+    setTimeout(async () => {
+      if (!state.ctcInfo) {
+        setState({
+          ...state,
+          ctc,
+          ctcInfo: await ctc.getInfo(),
+        })
       }
-    })
+    }, 5000)
+
+    await Promise.all([
+      backend.Funder(ctc, {
+        ...common('Funder'),
+        getParams: async () => ({
+          receiverAddr: query.ADDR,
+          payment: stdlib.parseCurrency(query.AMT),
+          maturity: query.MAT,
+          refund: query.REF,
+          dormant: query.DOR
+        })
+      }),
+    ])
   }
 
   const handleBob = async () => {
     console.log("Handling bob ...")
-    let { INFO, ADDR, SK, MNE } = query
-    const accRelay = REACT_APP_NETWORK === 'ETH'
-      ? await stdlib.newAccountFromMnemonic(MNE)
-      : await stdlib.newAccountFromSecret(Uint8Array.from(SK.split(',').map(el => +el)))
-    stdlib.transfer(state.acc, accRelay, stdlib.parseCurrency(1))
-    const ctcRelay = accRelay.attach(backend, REACT_APP_NETWORK === 'ETH' ? ADDR : INFO);
-    return backend.Relay(ctcRelay, {
-      getBob: async () => {
-        console.log('Bob, acting as the Relay gives his information.');
-        return state.acc.networkAccount;
-      }
-    })
+    let { ADDR, INFO } = query
+    const ctc = state.acc.attach(backend, REACT_APP_NETWORK === 'ETH' ? ADDR : INFO);
+    return Promise.all([
+      'Receiver',
+      'Bystander'
+    ].map(part => backend[part](ctc, common(part))))
   }
 
   return (
@@ -159,14 +176,22 @@ function App() {
       <Row className="mt-5 role role-alice">
         <Col xs={12} className="mb-3">
           <h2>
-            Send funds
+            Setup a trust fund
           </h2>
         </Col>
+        {[
+          { col: { xs: 9 }, control: { name: "ADDR", placeholder: "Receiver address" } },
+          { col: {}, control: { name: "AMT", placeholder: "Amount" } },
+          { col: {}, control: { name: "MAT", placeholder: "Maturity", type: "number" } },
+          { col: {}, control: { name: "REF", placeholder: "Refund", type: "number" } },
+          { col: {}, control: { name: "DOR", placeholder: "Dormant", type: "number" } },
+        ].map(el =>
+          <Col xs={3} {...el.col}>
+            <Form.Control className="mb-3" size="lg" type="text" onChange={handleChange} {...el.control} />
+          </Col>
+        )}
         <Col xs={3}>
-          <Form.Control name="AMT" size="lg" type="text" placeholder="Amount" onChange={handleChange} />
-        </Col>
-        <Col xs={3}>
-          <Button size="lg" onClick={handleAlice} disabled={!state.acc}>Send</Button>
+          <Button size="lg" onClick={handleAlice} disabled={!state.acc}>Setup</Button>
         </Col>
         {state.ctcInfo &&
           <Col xs={12}>
@@ -178,28 +203,29 @@ function App() {
           <Col xs={12}>
             mnemonic phrase: <br />
             {state.relay.acc?.networkAccount?.mnemonic?.phrase}
-          </Col>) : ( state.relay.acc?.networkAccount &&
+          </Col>) : (state.relay.acc?.networkAccount &&
             <Col xs={12}>
-            secret: <br />
-            {state.relay.acc.networkAccount.sk.toString()}
-          </Col>
+              secret: <br />
+              {state.relay.acc.networkAccount.sk.toString()}
+            </Col>
         )}
       </Row>
       <Row className="mt-5 role role-bob">
         <Col xs={12} className="mb-3">
           <h2>Receive funds</h2>
         </Col>
-        <Col xs={3}>
-          <Form.Control name={REACT_APP_NETWORK === 'ETH' ? "ADDR" : "INFO"} size="lg" type={REACT_APP_NETWORK === 'ETH' ? "text" : "number"} placeholder="Info" onChange={handleChange} />
-        </Col>
-
-        {REACT_APP_NETWORK === 'ETH' ? (
-          <Col xs={6}>
-            <Form.Control name="MNE" size="lg" type="text" placeholder="Mnemonic" onChange={handleChange} />
-          </Col>
-        ) : (
-          <Col xs={6}>
-            <Form.Control name="SK" size="lg" type="text" placeholder="Secret" onChange={handleChange} />
+        {[
+          {
+            col: {},
+            control: {
+              name: REACT_APP_NETWORK === 'ETH' ? "ADDR" : "INFO",
+              type: REACT_APP_NETWORK === 'ETH' ? "text" : "number",
+              placeholder: "Info",
+            }
+          },
+        ].map(el =>
+          <Col xs={3} {...el.col}>
+            <Form.Control className="mb-3" size="lg" type="text" onChange={handleChange} {...el.control} />
           </Col>
         )}
         <Col xs={3}>
